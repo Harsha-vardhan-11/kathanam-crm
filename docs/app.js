@@ -195,7 +195,9 @@ function renderSetup(error = '') {
   </div>`;
   $('#setupForm').onsubmit = async ev => {
     ev.preventDefault();
-    const conn = { url: ev.target.url.value.trim(), key: ev.target.key.value.trim() };
+    // Accept the whole Apps Script log line too ("YOUR SECRET KEY (keep it private):  abc…"): keep just the key.
+    const rawKey = ev.target.key.value.trim();
+    const conn = { url: ev.target.url.value.trim(), key: (rawKey.match(/[0-9a-f]{40,}/i) || [rawKey])[0] };
     if (!/^https:\/\/script\.google(usercontent)?\.com\//.test(conn.url)) return toast('That should be a script.google.com link ending in /exec', true);
     const btn = $('button[type=submit]', ev.target);
     btn.disabled = true;

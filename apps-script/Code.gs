@@ -13,6 +13,10 @@
  *   3. Deploy → New deployment → Web app → Execute as: Me · Who has access: Anyone → Deploy.
  *      Copy the Web app URL.
  *   4. Open the CRM, then paste the URL and the secret key.
+ *
+ * Assistant (optional, free): get a Gemini API key at aistudio.google.com → Get API key
+ * (no card needed), then in Apps Script: Project Settings → Script Properties →
+ * Add property  GEMINI_KEY = <your key>.
  */
 
 const FOLDER_NAME = 'Kathanam CRM';
@@ -56,6 +60,9 @@ function doPost(e) {
   const key = PropertiesService.getScriptProperties().getProperty('KEY');
   if (!key) return out_({ status: 500, error: 'Run setup() in the Apps Script editor first' });
   if (req.key !== key) return out_({ status: 401, error: 'Wrong secret key' });
+
+  // The assistant only reads what the app sends and proposes changes; it never saves anything itself.
+  if (req.action === 'agent') return out_(agent_(req.messages || [], req.context || {}));
 
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(25000)) return out_({ status: 503, error: 'Busy — please try again' });
@@ -186,6 +193,8 @@ function toCal_(ev, db) {
   const lines = [];
   if (p.name) lines.push('Project: ' + p.name);
   if (p.clientName) lines.push('Client: ' + p.clientName + (p.clientPhone ? ' (' + p.clientPhone + ')' : ''));
+  if ((ev.services || []).length) lines.push('Coverage: ' + ev.services.join(', '));
+  if (ev.servicesNote) lines.push('Coverage notes: ' + ev.servicesNote);
   if (crew.length) lines.push('Crew: ' + crew.join(', '));
   if (gear.length) lines.push('Equipment: ' + gear.join(', '));
   if (ev.notes) lines.push('Notes: ' + ev.notes);
@@ -223,4 +232,102 @@ function at_(date, time) {
 
 function hash_(obj) {
   return Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, JSON.stringify(obj)));
+}
+
+// ------------------------------------------------------------------ Assistant (Google Gemini, free tier)
+const SERVICES = ['Traditional Photography', 'Traditional Videography', 'Candid Photography', 'Candid Videography', 'Drone', 'Live Streaming', 'LED Screens'];
+const ACTION_TYPES = ['create_project', 'update_project', 'add_event', 'update_event', 'add_payment', 'add_team_member', 'add_equipment', 'add_deliverable'];
+
+function agentPrompt_(ctx) {
+  return [
+    "You are the booking assistant inside the CRM of Kathanam, a wedding photography and films company in India (a Golden Media company).",
+    "Turn the user's messages into CRM actions. The app shows your actions to the user as a checklist; nothing is saved until they confirm.",
+    "Today is " + (ctx.today || '') + " (Asia/Kolkata).",
+    "",
+    "RULES",
+    "- Dates are YYYY-MM-DD. If no year is given, use the next upcoming occurrence. Times are 24-hour HH:MM (\"7pm\" = 19:00, \"morning\" = leave empty and mention it in notes).",
+    "- Amounts are plain rupee numbers: 1L / 1 lakh = 100000, 50k = 50000, 3.5L = 350000.",
+    "- If the user refers to an existing project (by client or project name), use its id as projectRef. For a new client, add create_project with key \"new1\" (\"new2\" for a second one) and use that key as projectRef in the other actions.",
+    "- Name new projects like \"Ravi & Priya Wedding\" (or \"<Client> <Occasion>\"). New projects get status \"Booked\" if the user says it's confirmed/fixed/advance paid, otherwise \"Enquiry\".",
+    "- Each function (Haldi, Mehendi, Sangeet, Pelli Kuthuru, Pelli Koduku, Muhurtham / Wedding, Reception, Engagement, Pre-wedding Shoot, Vratham…) is a separate add_event.",
+    "- Coverage goes in services, using only these exact names: " + SERVICES.join(', ') + ". \"candid\" alone means Candid Photography and Candid Videography only if both are clear; \"video\" means Traditional Videography. Anything else (screen sizes, number of cameras, live link, special requests) goes in servicesNote.",
+    "- crew and equipment: only names the user actually gives. Never invent people, phone numbers, amounts, dates or venues.",
+    "- Money: money received from a client = add_payment payType \"in\". Paying a team member/vendor = \"payout\" (status \"pending\" if not yet paid). Costs like travel, hotel, food = \"expense\" with a category from: Transport, Accommodation, Food, Equipment Rental, Vendor, Printing / Album, Software, Misc.",
+    "- To change an existing event, use update_event with eventId and only the fields that change.",
+    "- Never delete anything.",
+    "- If something essential is missing (client name for a new booking, the date of an event), still propose what you can and ask in questions. Keep questions short; at most 3.",
+    "- reply: 1–2 short, friendly sentences saying what you prepared. If the message isn't about the CRM, return no actions and answer briefly.",
+    "- Always return the COMPLETE plan for the whole conversation so far, not only the latest message.",
+    "",
+    "CRM CONTEXT (JSON)",
+    JSON.stringify(ctx),
+  ].join('\n');
+}
+
+function agentSchema_() {
+  const S = { type: 'STRING' };
+  const N = { type: 'NUMBER' };
+  const A = { type: 'ARRAY', items: S };
+  return {
+    type: 'OBJECT',
+    properties: {
+      reply: S,
+      questions: A,
+      actions: {
+        type: 'ARRAY',
+        items: {
+          type: 'OBJECT',
+          properties: {
+            type: { type: 'STRING', enum: ACTION_TYPES },
+            key: S, projectRef: S, eventId: S,
+            name: S, clientName: S, clientPhone: S, clientEmail: S, clientAddress: S, package: S, quotation: N, status: S, notes: S,
+            title: S, date: S, start: S, end: S, location: S,
+            services: { type: 'ARRAY', items: { type: 'STRING', enum: SERVICES } }, servicesNote: S, crew: A, equipment: A,
+            payType: { type: 'STRING', enum: ['in', 'payout', 'expense'] }, amount: N, mode: S, category: S, payee: S, payStatus: S, note: S,
+            role: S, phone: S, rate: N, due: S,
+          },
+          required: ['type'],
+        },
+      },
+    },
+    required: ['reply', 'actions'],
+  };
+}
+
+function agent_(messages, ctx) {
+  const props = PropertiesService.getScriptProperties();
+  const apiKey = props.getProperty('GEMINI_KEY');
+  if (!apiKey) return { status: 200, error: 'NO_KEY' };
+
+  const contents = messages.slice(-12).map(m => ({ role: m.role === 'model' ? 'model' : 'user', parts: [{ text: String(m.text || '').slice(0, 8000) }] }));
+  if (!contents.length) return { status: 400, error: 'Empty message' };
+  const payload = JSON.stringify({
+    systemInstruction: { parts: [{ text: agentPrompt_(ctx) }] },
+    contents: contents,
+    generationConfig: { temperature: 0.1, responseMimeType: 'application/json', responseSchema: agentSchema_() },
+  });
+
+  // A model name Google retires returns 404, so fall back to the next one.
+  const models = [props.getProperty('GEMINI_MODEL'), 'gemini-flash-latest', 'gemini-2.5-flash'].filter(Boolean);
+  let last = '';
+  for (let i = 0; i < models.length; i++) {
+    const res = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + models[i] + ':generateContent', {
+      method: 'post', contentType: 'application/json', payload: payload,
+      headers: { 'x-goog-api-key': apiKey }, muteHttpExceptions: true,
+    });
+    const code = res.getResponseCode();
+    const text = res.getContentText();
+    if (code === 404) { last = models[i] + ' not found'; continue; }
+    if (code === 429) return { status: 200, error: "The free assistant limit is used up for now. Try again in a minute (or tomorrow), or add it by hand." };
+    if (code === 400 && text.indexOf('API key') >= 0) return { status: 200, error: 'Google did not accept the GEMINI_KEY. Check it in Apps Script → Project Settings → Script Properties.' };
+    if (code !== 200) return { status: 200, error: 'Assistant error ' + code + ': ' + text.slice(0, 200) };
+    try {
+      const body = JSON.parse(text);
+      const part = body.candidates[0].content.parts.map(p => p.text || '').join('');
+      return { status: 200, plan: JSON.parse(part), model: models[i] };
+    } catch (err) {
+      return { status: 200, error: "The assistant's answer couldn't be read. Please try rephrasing." };
+    }
+  }
+  return { status: 200, error: 'No assistant model available (' + last + ').' };
 }

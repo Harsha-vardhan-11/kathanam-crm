@@ -53,12 +53,29 @@ That's it. Every event you save now also appears in your Google Calendar.
 
 ---
 
+## The Assistant (optional, free)
+
+Tell it what happened in plain words, typed or spoken (🎤). For example:
+
+> New booking: Ravi & Priya, 98765 43210. Wedding 13 Dec 7pm at N Convention, reception 14 Dec 7pm same venue. Candid photo + drone for both, 2 LED screens and live streaming at reception. Quote 4.5L, advance 1L by UPI today.
+
+It shows a checklist of everything it will add: the client project, each event with its coverage, crew, and payments. It asks about anything missing. **Nothing is saved until you tick what's right and press Confirm.** It never deletes anything.
+
+It runs on Google's **Gemini free tier**, called from your own Apps Script, so it needs no card and can't bill you. At worst it hits a daily limit and asks you to try later. To switch it on:
+
+1. Go to **[aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey)** and click **Create API key**.
+2. In Apps Script, go to ⚙ **Project Settings → Script Properties → Add script property**. Set Property to `GEMINI_KEY`, set Value to your key, and click **Save**.
+
+Privacy note: on the free tier, Google may use what you send to improve its products. Only the message you type, plus the names of your projects, clients and team, is sent. Payments history is not.
+
 ## What's inside
 
 | Page | What it's for |
 |---|---|
 | **Dashboard** | Upcoming events, money received, client dues, team dues, expenses, cash in hand |
 | **Projects** | One per wedding, each with the 9 stages: 01 Client & Agreement · 02 Payments · 03 Event Schedule · 04 Team & Vendors · 05 Travel & Logistics · 06 Production · 07 Raw Footage (GB and backups) · 08 Post Production · 09 Final Deliverables |
+| **Assistant** | Add clients, events, coverage and payments from one plain-language message, then confirm |
+| **Events** | Each event has coverage checkboxes (Traditional Photography, Traditional Videography, Candid Photography, Candid Videography, Drone, Live Streaming, LED Screens) and a coverage-notes field. Coverage appears in Google Calendar and on the quotation |
 | **Calendar** | Month view of booked dates. Tap a date to book it. Warns you when a person or a piece of gear is booked twice on the same day |
 | **Team** | Crew and vendors, day rates, what you've paid them and what you still owe |
 | **Equipment** | Gear list and which events each item is booked for |

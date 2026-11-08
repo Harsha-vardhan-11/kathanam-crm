@@ -42,6 +42,7 @@ const EXP_CATS = ['Transport', 'Accommodation', 'Food', 'Equipment Rental', 'Ven
 const PAY_MODES = ['UPI', 'Cash', 'Bank Transfer', 'Cheque', 'Card'];
 const DELIV_STATUS = ['Not started', 'Editing', 'Client review', 'Revisions', 'Approved', 'Delivered'];
 const CHECK_GROUPS = ['Shot list', 'Daily checklist', 'Permissions'];
+const SERVICES = ['Traditional Photography', 'Traditional Videography', 'Candid Photography', 'Candid Videography', 'Drone', 'Live Streaming', 'LED Screens'];
 const EVENT_NAMES = ['Engagement', 'Pre-wedding Shoot', 'Haldi', 'Mehendi', 'Sangeet', 'Pelli Kuthuru', 'Pelli Koduku', 'Muhurtham / Wedding', 'Reception', 'Vratham'];
 const DELIV_TEMPLATE = ['Wedding Film (full)', 'Highlight / Teaser', 'Instagram Reels', 'Edited Photos', 'Wedding Album Design', 'Printed Album', 'Raw Footage Copy'];
 const CHECK_TEMPLATE = [
@@ -85,7 +86,7 @@ function normalize(d) {
   for (const k of ['projects', 'events', 'team', 'equipment', 'transactions']) if (!Array.isArray(d[k])) d[k] = [];
   d.settings = d.settings || {};
   d.projects.forEach(p => { p.stages = p.stages || {}; p.deliverables = p.deliverables || []; p.checklist = p.checklist || []; });
-  d.events.forEach(e => { e.crew = e.crew || []; e.equipment = e.equipment || []; });
+  d.events.forEach(e => { e.crew = e.crew || []; e.equipment = e.equipment || []; e.services = e.services || []; });
   return d;
 }
 
@@ -264,6 +265,8 @@ function eventDetails(e) {
     p && `Project: ${p.name}`,
     p?.clientName && `Client: ${p.clientName}${p.clientPhone ? ' (' + p.clientPhone + ')' : ''}`,
     e.crew.length && `Crew: ${e.crew.map(id => member(id)?.name).filter(Boolean).join(', ')}`,
+    e.services.length && `Coverage: ${e.services.join(', ')}`,
+    e.servicesNote && `Coverage notes: ${e.servicesNote}`,
     e.equipment.length && `Equipment: ${e.equipment.map(id => gear(id)?.name).filter(Boolean).join(', ')}`,
     e.notes && `Notes: ${e.notes}`,
   ].filter(Boolean).join('\n');
@@ -330,6 +333,7 @@ function eventRow(e, { showProject = true } = {}) {
     <div class="grow clickable" data-act="editEvent" data-id="${e.id}">
       <div class="title">${esc(e.title || 'Event')}${showProject ? ` <span class="muted small">· ${esc(projName(e.projectId))}</span>` : ''}</div>
       <div class="meta">${fmtDate(e.date)} · ${time}${e.location ? ' · ' + esc(e.location) : ''}</div>
+      ${e.services.length || e.servicesNote ? `<div class="tag-list">${e.services.map(sv => `<span class="badge gold">${esc(sv)}</span>`).join('')}${e.servicesNote ? `<span class="badge">${esc(e.servicesNote)}</span>` : ''}</div>` : ''}
       <div class="meta">${crew.length ? 'Crew: ' + esc(crew.join(', ')) : 'No crew assigned'}${e.equipment.length ? ` · ${e.equipment.length} equipment` : ''}${num(e.gb) ? ` · ${num(e.gb)} GB` : ''}</div>
       ${warn.length ? `<div class="alert">⚠ Double-booked that day: ${esc(warn.join(', '))}</div>` : ''}
     </div>
@@ -473,6 +477,8 @@ function editEvent(id, preset = {}) {
       { k: 'end', label: 'End time', type: 'time' },
       { k: 'location', label: 'Location / venue', full: true },
       { k: 'crew', label: 'Crew', type: 'multi', full: true, options: DB.team.map(m => [m.id, `${m.name}${m.role ? ' · ' + m.role : ''}`]), emptyMsg: 'Add people on the Team page first' },
+      { k: 'services', label: 'Coverage for this event', type: 'multi', full: true, options: opts(SERVICES) },
+      { k: 'servicesNote', label: 'Coverage notes', full: true, ph: 'e.g. 2 LED screens, live on YouTube, extra candid for bride side' },
       { k: 'equipment', label: 'Equipment taken', type: 'multi', full: true, options: DB.equipment.map(g => [g.id, g.name]), emptyMsg: 'Add gear on the Equipment page first' },
       { k: 'gb', label: 'Footage size (GB)', type: 'number', hint: 'Fill after the shoot' },
       { k: 'backup', label: 'Backup location', ph: 'e.g. SSD-2 / NAS / Drive' },
@@ -606,7 +612,7 @@ VIEWS.dashboard = () => {
   return `
   <header class="page-h">
     <div><h1>${hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'}</h1><p class="muted">${fmtDate(t)} · ${DB.projects.length} projects · ${upcoming.length} upcoming events</p></div>
-    <div class="actions"><button class="btn gold" data-act="newProject">+ New project</button><button class="btn" data-act="newEvent">+ Event</button><button class="btn" data-act="newTx" data-type="expense">+ Expense</button></div>
+    <div class="actions"><a class="btn gold" href="#/assistant">✦ Assistant</a><button class="btn" data-act="newProject">+ New project</button><button class="btn" data-act="newEvent">+ Event</button><button class="btn" data-act="newTx" data-type="expense">+ Expense</button></div>
   </header>
   <section class="kpis">
     ${kpi('Next 30 days', upcoming.filter(e => e.date <= addDays(t, 30)).length + ' events', upcoming[0] ? 'Next: ' + fmtShort(upcoming[0].date) : 'Nothing booked yet')}
@@ -687,6 +693,7 @@ const TABS = {
       ${info('Quotation', money(p.quotation))}
       ${info('Contract', p.contractSigned ? `<span class="badge green">Signed${p.contractDate ? ' · ' + fmtShort(p.contractDate) : ''}</span>` : '<span class="badge amber">Not signed</span>')}
       ${info('Address', esc(p.clientAddress))}
+      ${info('Coverage booked', [...new Set(DB.events.filter(e => e.projectId === p.id).flatMap(e => e.services))].map(sv => `<span class="badge gold">${esc(sv)}</span>`).join(' '))}
       ${info('Notes', esc(p.notes))}
     </div>
     <div class="actions" style="margin-top:14px"><button class="btn" data-act="editProject" data-id="${p.id}">Edit client & agreement</button>
@@ -831,7 +838,7 @@ VIEWS.team = () => {
   const t = today();
   return `
   <header class="page-h"><div><h1>Team</h1><p class="muted">Crew, freelancers and vendors — and what you owe them</p></div>
-    <div class="actions"><button class="btn" data-act="newTx" data-type="payout">+ Record payout</button><button class="btn gold" data-act="newMember">+ Add member</button></div></header>
+    <div class="actions"><a class="btn" href="#/equipment">Equipment</a><button class="btn" data-act="newTx" data-type="payout">+ Record payout</button><button class="btn gold" data-act="newMember">+ Add member</button></div></header>
   <section class="card">${DB.team.map(m => {
     const evs = DB.events.filter(e => e.crew.includes(m.id));
     const next = evs.filter(e => e.date >= t).sort(byDate);
@@ -971,7 +978,7 @@ function printDoc(title, body) {
   if (!w) return toast('Allow pop-ups for this page to print', true);
   const B = biz();
   w.document.write(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${esc(title)}</title>
-  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
   <style>
     @page { size: A4; margin: 14mm; }
     * { box-sizing: border-box; }
@@ -981,8 +988,8 @@ function printDoc(title, body) {
     .head img { height: 150px; margin: -34px 0 -38px -26px; }
     .head .biz { text-align: right; font-size: 12px; color: #555; }
     .head .biz b { color: #1b1b1b; font-size: 13px; }
-    h1 { font: 700 30px 'Cormorant Garamond', serif; color: #9c7a1e; margin: 22px 0 2px; letter-spacing: .5px; }
-    h2 { font: 600 19px 'Cormorant Garamond', serif; color: #9c7a1e; margin: 22px 0 8px; border-bottom: 1px solid #e6dcc0; padding-bottom: 4px; }
+    h1 { font: 700 30px 'Playfair Display', Georgia, serif; color: #9c7a1e; margin: 22px 0 2px; letter-spacing: .5px; }
+    h2 { font: 600 19px 'Playfair Display', Georgia, serif; color: #9c7a1e; margin: 22px 0 8px; border-bottom: 1px solid #e6dcc0; padding-bottom: 4px; }
     .meta { display: flex; justify-content: space-between; gap: 20px; margin-top: 10px; }
     .meta .lbl { font-size: 10.5px; text-transform: uppercase; letter-spacing: 1px; color: #8a8a8a; }
     table { width: 100%; border-collapse: collapse; }
@@ -990,7 +997,7 @@ function printDoc(title, body) {
     td { padding: 7px 8px; border-bottom: 1px solid #eee; vertical-align: top; }
     .r { text-align: right; white-space: nowrap; }
     .total td { font-weight: 600; font-size: 14px; border-top: 2px solid #b8932c; border-bottom: 0; }
-    .big { font: 700 28px 'Cormorant Garamond', serif; color: #1b1b1b; }
+    .big { font: 700 28px 'Playfair Display', Georgia, serif; color: #1b1b1b; }
     .box { border: 1px solid #e6dcc0; background: #fcf9f1; border-radius: 8px; padding: 12px 14px; }
     .terms { white-space: pre-wrap; font-size: 11.5px; color: #333; }
     .sign { display: flex; justify-content: space-between; gap: 40px; margin-top: 56px; }
@@ -1023,8 +1030,8 @@ function printQuotation(pid) {
     <div class="meta">${clientBlock(p)}
       <div style="text-align:right"><div class="lbl">Quotation no.</div><b>${docNo('Q', p.id)}</b><div class="lbl" style="margin-top:6px">Date</div>${fmtDate(today())}</div></div>
     <h2>${esc(p.name)}${p.package ? ` · ${esc(p.package)}` : ''}</h2>
-    ${evs.length ? `<table><tr><th>Event</th><th>Date</th><th>Time</th><th>Venue</th></tr>
-      ${evs.map(e => `<tr><td>${esc(e.title)}</td><td>${fmtDate(e.date)}</td><td>${e.start ? fmtTime(e.start) + (e.end ? ' – ' + fmtTime(e.end) : '') : 'Full day'}</td><td>${esc(e.location)}</td></tr>`).join('')}</table>` : '<p>Event dates to be confirmed.</p>'}
+    ${evs.length ? `<table><tr><th>Event</th><th>Date</th><th>Time</th><th>Venue</th><th>Coverage</th></tr>
+      ${evs.map(e => `<tr><td>${esc(e.title)}</td><td>${fmtDate(e.date)}</td><td>${e.start ? fmtTime(e.start) + (e.end ? ' – ' + fmtTime(e.end) : '') : 'Full day'}</td><td>${esc(e.location)}</td><td>${esc([...e.services, e.servicesNote].filter(Boolean).join(', '))}</td></tr>`).join('')}</table>` : '<p>Event dates to be confirmed.</p>'}
     ${p.deliverables.length ? `<h2>Deliverables</h2><table>${p.deliverables.map(d => `<tr><td>${esc(d.name)}</td><td class="r">${d.due ? 'By ' + fmtDate(d.due) : ''}</td></tr>`).join('')}</table>` : ''}
     <h2>Investment</h2>
     <div class="box"><div class="big">${money(p.quotation)}</div><div>${inWords(p.quotation)}</div></div>
@@ -1086,9 +1093,10 @@ function render() {
   const navKey = r.view === 'project' ? 'projects' : r.view;
   const navHtml = (items) => items.map(([k, l, i]) => `<a href="#/${k}" class="${navKey === k ? 'on' : ''}">${icon(i)}<span>${l}</span></a>`).join('');
   $('#sideNav').innerHTML = navHtml(NAV);
-  $('#bottomNav').innerHTML = navHtml(NAV.slice(0, 6));
+  $('#bottomNav').innerHTML = navHtml(NAV.filter(([k]) => ['dashboard', 'assistant', 'projects', 'calendar', 'team', 'money'].includes(k)));
   $('#main').innerHTML = (VIEWS[r.view] || VIEWS.dashboard)(r);
   if (r.view === 'settings' && MODE === 'local') loadLanInfo();
+  if (r.view === 'assistant' && typeof wireAssistant === 'function') wireAssistant();
 }
 let lastView = '';
 window.addEventListener('hashchange', () => {
@@ -1209,4 +1217,4 @@ document.addEventListener('input', e => {
 });
 $('[data-icon="settings"]').innerHTML = icon('settings');
 
-load();
+document.addEventListener('DOMContentLoaded', load);

@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0a0a0a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Kathanam CRM">
+  <title>Kathanam CRM</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="logo.png">
+  <link rel="apple-touch-icon" href="logo.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="side">
+      <a href="#/dashboard" class="brand" aria-label="Kathanam home">
+        <div class="logo-crop"><img src="logo.png" alt="Kathanam"></div>
+        <span class="brand-sub">CRM · A Golden Media company</span>
+      </a>
+      <nav class="side-nav" id="sideNav"></nav>
+    </aside>
+
+    <header class="mobile-top">
+      <a href="#/dashboard" class="logo-crop sm"><img src="logo.png" alt="Kathanam"></a>
+      <a href="#/settings" class="icon-btn" aria-label="Settings" data-icon="settings"></a>
+    </header>
+
+    <main id="main"><div class="loading">Loading…</div></main>
+  </div>
+
+  <nav class="bottom-nav" id="bottomNav"></nav>
+  <div id="modal" class="modal" hidden></div>
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+# Your private data and settings never go to GitHub
+data/
+config.json
+google_credentials.json
+__pycache__/
+*.tmp
